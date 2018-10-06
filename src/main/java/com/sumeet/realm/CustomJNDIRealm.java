@@ -1115,8 +1115,6 @@ public class CustomJNDIRealm extends RealmBase {
 
             // Ensure that we have a directory context available
             context = open();
-            containerLog.info(context.getEnvironment().get(Context.SECURITY_CREDENTIALS));
-            containerLog.info(context.getEnvironment().get(Context.SECURITY_PRINCIPAL));
 
             // Occasionally the directory context will timeout.  Try one more
             // time before giving up.
@@ -1718,7 +1716,7 @@ public class CustomJNDIRealm extends RealmBase {
      * @param context      DirContext to configure
      * @exception NamingException if a directory server error occurs
      */
-    private void .ideajjjnnnn(DirContext context)
+    private void userCredentialsRemove(DirContext context)
             throws NamingException {
         // Restore the original security environment
         if (connectionName != null) {
@@ -1917,12 +1915,6 @@ public class CustomJNDIRealm extends RealmBase {
             if (searchAsUser) {
                 userCredentialsAdd(context, user.getDN(), user.getPassword());
             }
-            containerLog.info(base);
-            containerLog.info(filter);
-            containerLog.info(controls.getSearchScope());
-            containerLog.info(context.getEnvironment().get(Context.SECURITY_CREDENTIALS));
-            containerLog.info(context.getEnvironment().get(Context.SECURITY_PRINCIPAL));
-            containerLog.info(context.getEnvironment().get(Context.SECURITY_AUTHENTICATION));
             results = context.search(base, filter, controls);
         } finally {
             if (searchAsUser) {

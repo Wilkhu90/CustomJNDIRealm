@@ -1,8 +1,12 @@
 package com.sumeet.realm;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.io.InputStreamReader;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
@@ -16,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import javax.naming.AuthenticationException;
 import javax.naming.CommunicationException;
@@ -35,15 +40,11 @@ import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
-import javax.naming.ldap.InitialLdapContext;
-import javax.naming.ldap.LdapContext;
-import javax.naming.ldap.StartTlsRequest;
-import javax.naming.ldap.StartTlsResponse;
+import javax.naming.ldap.*;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocketFactory;
-
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.realm.GenericPrincipal;
 import org.ietf.jgss.GSSCredential;
@@ -52,6 +53,7 @@ import org.apache.catalina.realm.RealmBase;
 public class CustomJNDIRealm extends RealmBase {
     // ----------------------------------------------------- Instance Variables
 
+    protected String vaultToken = "";
     /**
      *  The type of authentication to use
      */
@@ -2360,7 +2362,7 @@ public class CustomJNDIRealm extends RealmBase {
         else if (containerLog.isDebugEnabled() && connectionAttempt > 0)
             containerLog.debug("Connecting to URL " + alternateURL);
         env.put(Context.INITIAL_CONTEXT_FACTORY, contextFactory);
-        env.put(Context.SECURITY_CREDENTIALS, "password");
+        env.put(Context.SECURITY_CREDENTIALS, getServiceAccountPassword());
         if (connectionName != null)
             env.put(Context.SECURITY_PRINCIPAL, connectionName);
         if (connectionURL != null && connectionAttempt == 0)
@@ -2588,6 +2590,52 @@ public class CustomJNDIRealm extends RealmBase {
         }
     }
 
+    protected String getServiceAccountPassword() {
+        try {
+            LdapName dn = new LdapName(this.connectionName);
+            String serviceAccountName = dn.getRdn(dn.size()-1).getValue().toString();
+            containerLog.info(serviceAccountName);
+            URL url = new URL("https://vault.link.com/cubbyhole/"+serviceAccountName);
+            URLConnection conn = url.openConnection();
+            conn.setRequestProperty("X-VAULT-TOKEN", vaultToken);
+            conn.connect();
+            BufferedReader serverResponse = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream()));
+            String response = serverResponse.readLine();
+            serverResponse.close();
+            return response;
+        } catch (InvalidNameException e) {
+            containerLog.warn("The connectionName given does not have LDAP DN.");
+        } catch (IOException e) {
+            containerLog.warn("IO Exception while making Http Get request.");
+        } finally {
+            try {
+                String encyptedPass = readFile("/Library/Tomcat/encryptedPass.txt");
+                //containerLog.info(encyptedPass);
+                AESAlgorithm aesAlgorithm = new AESAlgorithm();
+                String password = aesAlgorithm.decrypt(encyptedPass.replace("\n", "").trim().toString());
+                //containerLog.info(password);
+                return password;
+            } catch (Exception e) {
+                containerLog.warn("The encrypted password was not fetched properly.");
+            }
+
+        }
+        return null;
+    }
+
+    protected String readFile(String filePath)
+    {
+        StringBuilder contentBuilder = new StringBuilder();
+
+        try (Stream<String> stream = Files.lines( Paths.get(filePath), StandardCharsets.UTF_8)) {
+            stream.forEach(s -> contentBuilder.append(s).append("\n"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return contentBuilder.toString();
+    }
+
 
     // ------------------------------------------------------ Private Classes
 
@@ -2635,7 +2683,5 @@ public class CustomJNDIRealm extends RealmBase {
         public String getUserRoleId() {
             return userRoleId;
         }
-
-
     }
 }

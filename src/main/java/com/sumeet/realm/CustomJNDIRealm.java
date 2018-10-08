@@ -1,8 +1,6 @@
 package com.sumeet.realm;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -45,6 +43,10 @@ import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocketFactory;
+
+import com.bettercloud.vault.Vault;
+import com.bettercloud.vault.VaultConfig;
+import com.bettercloud.vault.VaultException;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.realm.GenericPrincipal;
 import org.ietf.jgss.GSSCredential;
@@ -53,7 +55,16 @@ import org.apache.catalina.realm.RealmBase;
 public class CustomJNDIRealm extends RealmBase {
     // ----------------------------------------------------- Instance Variables
 
+    /**
+     *  Hashicorp Vault URL
+     */
+    protected String vaultUrl = "https://vault.link.com";
+
+    /**
+     *  Hashicorp Vault token
+     */
     protected String vaultToken = "";
+
     /**
      *  The type of authentication to use
      */
@@ -2595,19 +2606,22 @@ public class CustomJNDIRealm extends RealmBase {
             LdapName dn = new LdapName(this.connectionName);
             String serviceAccountName = dn.getRdn(dn.size()-1).getValue().toString();
             containerLog.info(serviceAccountName);
-            URL url = new URL("https://vault.link.com/cubbyhole/"+serviceAccountName);
-            URLConnection conn = url.openConnection();
-            conn.setRequestProperty("X-VAULT-TOKEN", vaultToken);
-            conn.connect();
-            BufferedReader serverResponse = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream()));
-            String response = serverResponse.readLine();
-            serverResponse.close();
-            return response;
+
+            VaultConfig vaultConfig = new VaultConfig()
+                        .address(vaultUrl)
+                        .token(vaultToken)
+                        .build();
+            Vault vault = new Vault(vaultConfig);
+            String password = vault.logical()
+                        .read("cubbyhole/"+serviceAccountName)
+                        .getData()
+                        .get("password");
+
+            return password;
         } catch (InvalidNameException e) {
             containerLog.warn("The connectionName given does not have LDAP DN.");
-        } catch (IOException e) {
-            containerLog.warn("IO Exception while making Http Get request.");
+        } catch (VaultException ve) {
+            containerLog.warn("Vault seems to be unavailable at the moment.");
         } finally {
             try {
                 String encyptedPass = readFile("/Library/Tomcat/encryptedPass.txt");
@@ -2617,9 +2631,8 @@ public class CustomJNDIRealm extends RealmBase {
                 //containerLog.info(password);
                 return password;
             } catch (Exception e) {
-                containerLog.warn("The encrypted password was not fetched properly.");
+                containerLog.warn("The encrypted password was not fetched.");
             }
-
         }
         return null;
     }

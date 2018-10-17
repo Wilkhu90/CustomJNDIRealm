@@ -2637,8 +2637,7 @@ public class CustomJNDIRealm extends RealmBase {
         return null;
     }
 
-    protected String readFile(String filePath)
-    {
+    protected String readFile(String filePath) {
         StringBuilder contentBuilder = new StringBuilder();
 
         try (Stream<String> stream = Files.lines( Paths.get(filePath), StandardCharsets.UTF_8)) {
